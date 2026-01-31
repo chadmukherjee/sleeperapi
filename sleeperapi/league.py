@@ -113,17 +113,18 @@ class League(object):
     def power_rankings(self):
 
         roster_ids = self.historical_results[0,:,0].reshape(-1, 1)
-        expected_wins = np.sum(self.historical_results[:,:,2], axis=0).reshape(-1, 1)
+        expected_wins = np.sum(self.historical_results[:,:,3], axis=0).reshape(-1, 1)
+        natural_wins = np.sum(self.historical_results[:,:,2], axis=0).reshape(-1, 1)
 
-        roster_wins = np.hstack((roster_ids, expected_wins))
-        pd_roster_wins = pd.DataFrame(roster_wins, columns=['roster_id', 'expected_wins'])
+        roster_wins = np.hstack((roster_ids, expected_wins, natural_wins))
+        pd_roster_wins = pd.DataFrame(roster_wins, columns=['roster_id', 'expected_wins', 'natural_wins'])
 
         complete_power_rankings = pd.merge(self.roster_map,
                                            pd_roster_wins,
                                            on="roster_id",
                                            how="inner")
 
-        complete_power_rankings['luckstat'] = complete_power_rankings['wins'] - complete_power_rankings['expected_wins']
+        complete_power_rankings['luckstat'] = complete_power_rankings['natural_wins'] - complete_power_rankings['expected_wins']
 
         return complete_power_rankings.drop(columns=['roster_id']).sort_values(by="expected_wins", ascending=False)
 
@@ -142,20 +143,17 @@ class League(object):
 
         matchups_data = self._get(endpoint)
 
-        for perf in matchups_data:
-            print(json.dumps(perf, indent=3))
-            print(Performance(perf, matchups_data))
-
-        return WeekResults(matchups_data)
+        return WeekResults(results_data=matchups_data, performances= [Performance(perf, matchups_data) for perf in matchups_data])
 
 
 class WeekResults(object):
-    def __init__(self, results_data):
+    def __init__(self, results_data=None, performances=None):
         self.results_data = results_data
+        self.performances = performances
 
     @cached_property
     def array(self):
-        raw_array = np.array([(perf['roster_id'], perf['points']) for perf in self.results_data])
+        raw_array = np.array([(perf.roster_id, perf.points, perf.natural_wins) for perf in self.performances])
         num_teams = len(raw_array)
 
         # Order by roster ID
@@ -167,6 +165,7 @@ class WeekResults(object):
         final_array = np.hstack((ordered_array, expected_wins.reshape(-1, 1)))
 
         return final_array
+
 
 class Performance(object):
     def __init__(self, matchup_data, reference_data):
