@@ -143,7 +143,7 @@ class League(object):
 
         matchups_data = self._get(endpoint)
 
-        return WeekResults(results_data=matchups_data, performances= [Performance(perf, matchups_data) for perf in matchups_data])
+        return WeekResults(performances= [Performance(perf, matchups_data) for perf in matchups_data])
 
 
 class WeekResults(object):
