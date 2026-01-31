@@ -1,0 +1,72 @@
+name: Deploy Lambda Layer
+
+on:
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  deploy-layer:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+    
+    - name: Create layer directory structure
+      run: |
+        mkdir -p python/lib/python3.13/site-packages
+    
+    - name: Copy library to layer directory
+      run: |
+        cp -r sleeperapi python/lib/python3.13/site-packages/
+    
+    - name: Create layer zip
+      run: |
+        zip -r sleeperapi-layer.zip python/
+    
+    - name: Publish new layer version
+      id: publish_layer
+      run: |
+        LAYER_VERSION=$(aws lambda publish-layer-version \
+          --layer-name sleeperapi \
+          --description "SleeperAPI Python library" \
+          --zip-file fileb://sleeperapi-layer.zip \
+          --compatible-runtimes python3.13 \
+          --query 'Version' \
+          --output text)
+        echo "layer_version=$LAYER_VERSION" >> $GITHUB_OUTPUT
+        echo "Published layer version: $LAYER_VERSION"
+    
+    - name: Update Lambda function layers
+      run: |
+        # Get the new layer ARN
+        NEW_LAYER_ARN="arn:aws:lambda:us-east-1:424725251461:layer:sleeperapi:${{ steps.publish_layer.outputs.layer_version }}"
+        PANDAS_LAYER_ARN="arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python313:5"
+        
+        # Update the Lambda function with both layers
+        aws lambda update-function-configuration \
+          --function-name YourSleeperPowerRankingsFunctionName \
+          --layers "$NEW_LAYER_ARN" "$PANDAS_LAYER_ARN"
+        
+        echo "✅ Updated Lambda with layers:"
+        echo "  - SleeperAPI: $NEW_LAYER_ARN"
+        echo "  - Pandas: $PANDAS_LAYER_ARN"
+    
+    - name: Wait for function update to complete
+      run: |
+        aws lambda wait function-updated \
+          --function-name YourSleeperPowerRankingsFunctionName
+    
+    - name: Deployment complete
+      run: echo "✅ Layer deployment successful!"
