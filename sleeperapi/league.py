@@ -147,8 +147,7 @@ class League(object):
 
 
 class WeekResults(object):
-    def __init__(self, results_data=None, performances=None):
-        self.results_data = results_data
+    def __init__(self, performances):
         self.performances = performances
 
     @cached_property
