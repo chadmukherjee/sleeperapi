@@ -57,7 +57,7 @@ jobs:
         
         # Update the Lambda function with both layers
         aws lambda update-function-configuration \
-          --function-name YourSleeperPowerRankingsFunctionName \
+          --function-name SleeperPowerRankings \
           --layers "$NEW_LAYER_ARN" "$PANDAS_LAYER_ARN"
         
         echo "✅ Updated Lambda with layers:"
@@ -67,7 +67,7 @@ jobs:
     - name: Wait for function update to complete
       run: |
         aws lambda wait function-updated \
-          --function-name YourSleeperPowerRankingsFunctionName
+          --function-name SleeperPowerRankings
     
     - name: Deployment complete
       run: echo "✅ Layer deployment successful!"
