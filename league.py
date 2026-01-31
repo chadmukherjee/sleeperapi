@@ -1,7 +1,6 @@
 import requests
 import json
-import numpy as np
-import pandas as pd
+import polars as pl
 from functools import cached_property
 
 class League(object):
@@ -101,30 +100,32 @@ class League(object):
                     roster_map.append(roster_metadata)
                     break
 
-        pd_roster_map = pd.DataFrame(roster_map).reset_index(drop=True)
-        return pd_roster_map
+        pl_roster_map = pl.DataFrame(roster_map)
+
+        return pl_roster_map
 
     @cached_property
     def historical_results(self):
 
-        return np.stack([self.get_week_results(week).array for week in range(1, self.latest_reg_season_week)])
+        return pl.concat([self.get_week_results(week).df for week in range(1, self.latest_reg_season_week)])
 
     @cached_property
     def power_rankings(self):
 
-        roster_ids = self.historical_results[0,:,0].reshape(-1, 1)
-        expected_wins = np.sum(self.historical_results[:,:,3], axis=0).reshape(-1, 1)
-        natural_wins = np.sum(self.historical_results[:,:,2], axis=0).reshape(-1, 1)
+        # Aggregate weekly metrics including cumulative sums
+        agg_df = self.historical_results.group_by('roster_id').agg([
+            pl.col('natural_wins').sum().alias('natural_wins'),
+            pl.col('expected_wins').sum().alias('expected_wins'),
+            pl.col('luck_index').sum().alias('luckstat'),
+            pl.col('luck_index').cum_sum().alias('cumulative_luck')
+        ])
 
-        roster_wins = np.hstack((roster_ids, expected_wins, natural_wins))
-        pd_roster_wins = pd.DataFrame(roster_wins, columns=['roster_id', 'expected_wins', 'natural_wins'])
+        final_agg_df = agg_df.join(self.roster_map,
+                                   on='roster_id',
+                                   how='inner').drop('roster_id')
 
-        complete_power_rankings = pd.merge(self.roster_map,
-                                           pd_roster_wins,
-                                           on="roster_id",
-                                           how="inner")
+        return final_agg_df.sort('expected_wins', descending=True)
 
-        complete_power_rankings['luckstat'] = complete_power_rankings['natural_wins'] - complete_power_rankings['expected_wins']
 
         return complete_power_rankings.drop(columns=['roster_id']).sort_values(by="expected_wins", ascending=False)
 
@@ -143,27 +144,39 @@ class League(object):
 
         matchups_data = self._get(endpoint)
 
-        return WeekResults(performances= [Performance(perf, matchups_data) for perf in matchups_data])
+        return WeekResults(week, performances= [Performance(perf, matchups_data) for perf in matchups_data])
 
 
 class WeekResults(object):
-    def __init__(self, performances):
+    def __init__(self, week, performances):
         self.performances = performances
+        self.week = week
 
     @cached_property
-    def array(self):
-        raw_array = np.array([(perf.roster_id, perf.points, perf.natural_wins) for perf in self.performances])
-        num_teams = len(raw_array)
+    def df(self):
 
-        # Order by roster ID
-        ordered_indices = np.argsort(raw_array[:, 0])
-        ordered_array = raw_array[ordered_indices]
+        num_teams = len(self.performances)
 
-        # Assign conceptual wins against the rest of the league
-        expected_wins = np.argsort(np.argsort(ordered_array[:,1]))/(num_teams - 1)
-        final_array = np.hstack((ordered_array, expected_wins.reshape(-1, 1)))
+        raw_df = pl.DataFrame([(self.week, perf.roster_id, perf.points, perf.natural_wins) for perf in self.performances],
+                              schema = {
+                                  'week': pl.Int32,
+                                  'roster_id': pl.Int32,
+                                  'points': pl.Float64,
+                                  'natural_wins': pl.Float64
+                              },
+                              orient='row')
 
-        return final_array
+        # Calculate Expected Wins for the week
+        df = raw_df.with_columns(
+            ((pl.col('points').rank(method='min') - 1)/(num_teams-1)).alias('expected_wins')
+        )
+
+        # Calculate Luck index for the week
+        df = df.with_columns(
+            (pl.col('natural_wins') - pl.col('expected_wins')).alias('luck_index')
+        )
+        
+        return df
 
 
 class Performance(object):
