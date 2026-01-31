@@ -67,7 +67,7 @@ jobs:
     - name: Wait for function update to complete
       run: |
         aws lambda wait function-updated \
-          --function-name YourSleeperPowerRankingsFunctionName
+          --function-name SleeperPowerRankings
     
     - name: Deployment complete
       run: echo "✅ Layer deployment successful!"
