@@ -81,6 +81,10 @@ class League(object):
         return self._get(endpoint)
 
     @cached_property
+    def league_average_match(self):
+        return bool(self.league_data['settings'].get('league_average_match'))
+
+    @cached_property
     def roster_map(self):
         roster_map = []
 
@@ -109,17 +113,18 @@ class League(object):
     def power_rankings(self):
 
         roster_ids = self.historical_results[0,:,0].reshape(-1, 1)
-        expected_wins = np.sum(self.historical_results[:,:,2], axis=0).reshape(-1, 1)
+        expected_wins = np.sum(self.historical_results[:,:,3], axis=0).reshape(-1, 1)
+        natural_wins = np.sum(self.historical_results[:,:,2], axis=0).reshape(-1, 1)
 
-        roster_wins = np.hstack((roster_ids, expected_wins))
-        pd_roster_wins = pd.DataFrame(roster_wins, columns=['roster_id', 'expected_wins'])
+        roster_wins = np.hstack((roster_ids, expected_wins, natural_wins))
+        pd_roster_wins = pd.DataFrame(roster_wins, columns=['roster_id', 'expected_wins', 'natural_wins'])
 
         complete_power_rankings = pd.merge(self.roster_map,
                                            pd_roster_wins,
                                            on="roster_id",
                                            how="inner")
 
-        complete_power_rankings['luckstat'] = complete_power_rankings['wins'] - complete_power_rankings['expected_wins']
+        complete_power_rankings['luckstat'] = complete_power_rankings['natural_wins'] - complete_power_rankings['expected_wins']
 
         return complete_power_rankings.drop(columns=['roster_id']).sort_values(by="expected_wins", ascending=False)
 
@@ -138,16 +143,16 @@ class League(object):
 
         matchups_data = self._get(endpoint)
 
-        return WeekResults(matchups_data)
+        return WeekResults(results_data=matchups_data, performances= [Performance(perf, matchups_data) for perf in matchups_data])
 
 
 class WeekResults(object):
-    def __init__(self, results_data):
-        self.results_data = results_data
+    def __init__(self, performances):
+        self.performances = performances
 
     @cached_property
     def array(self):
-        raw_array = np.array([(perf['roster_id'], perf['points']) for perf in self.results_data])
+        raw_array = np.array([(perf.roster_id, perf.points, perf.natural_wins) for perf in self.performances])
         num_teams = len(raw_array)
 
         # Order by roster ID
@@ -160,9 +165,11 @@ class WeekResults(object):
 
         return final_array
 
+
 class Performance(object):
-    def __init__(self, matchup_data):
+    def __init__(self, matchup_data, reference_data):
         self.matchup_data = matchup_data
+        self.reference_data = reference_data
         self.matchup_id = matchup_data.get("matchup_id")
         self.roster_id = matchup_data.get("roster_id")
         self.points = matchup_data.get("points")
@@ -170,11 +177,36 @@ class Performance(object):
         self.starters_points = matchup_data.get("starters_points")
         self.players_points = matchup_data.get("players_points")
 
+
     def __repr__(self):
         return (
             f"Performance(matchup_id={self.matchup_id}, roster_id={self.roster_id}, points={self.points}, "
-            f"starters={self.starters}, starters_points={self.starters_points})"
+            f"starters={self.starters}, starters_points={self.starters_points}," 
+            f"opponent_roster_id={self.opponent_roster_id}, natural_wins={self.natural_wins})"
         )
+
+    @cached_property
+    def opponent_matchup_data(self):
+        return [perf for perf in self.reference_data if perf['matchup_id'] == self.matchup_id and perf['roster_id'] != self.roster_id][0]
+
+    @cached_property
+    def opponent_roster_id(self):
+        return self.opponent_matchup_data['roster_id']
+
+    @cached_property
+    def opponent_points(self):
+        return self.opponent_matchup_data['points']
+
+    @cached_property
+    def natural_wins(self):
+        if self.points > self.opponent_points:
+            natural_wins = 1
+        elif self.points < self.opponent_points:
+            natural_wins = 0
+        elif self.points == self.opponent_points:
+            natural_wins = .5
+
+        return natural_wins
 
 class Matchup():
     def __init__(self, matchup_data):
