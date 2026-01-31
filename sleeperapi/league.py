@@ -81,6 +81,10 @@ class League(object):
         return self._get(endpoint)
 
     @cached_property
+    def league_average_match(self):
+        return bool(self.league_data['settings'].get('league_average_match'))
+
+    @cached_property
     def roster_map(self):
         roster_map = []
 
@@ -138,6 +142,10 @@ class League(object):
 
         matchups_data = self._get(endpoint)
 
+        for perf in matchups_data:
+            print(json.dumps(perf, indent=3))
+            print(Performance(perf, matchups_data))
+
         return WeekResults(matchups_data)
 
 
@@ -161,8 +169,9 @@ class WeekResults(object):
         return final_array
 
 class Performance(object):
-    def __init__(self, matchup_data):
+    def __init__(self, matchup_data, reference_data):
         self.matchup_data = matchup_data
+        self.reference_data = reference_data
         self.matchup_id = matchup_data.get("matchup_id")
         self.roster_id = matchup_data.get("roster_id")
         self.points = matchup_data.get("points")
@@ -170,11 +179,37 @@ class Performance(object):
         self.starters_points = matchup_data.get("starters_points")
         self.players_points = matchup_data.get("players_points")
 
+
     def __repr__(self):
         return (
             f"Performance(matchup_id={self.matchup_id}, roster_id={self.roster_id}, points={self.points}, "
-            f"starters={self.starters}, starters_points={self.starters_points})"
+            f"starters={self.starters}, starters_points={self.starters_points}," 
+            f"opponent_roster_id={self.opponent_roster_id}, natural_wins={self.natural_wins})"
         )
+
+    @cached_property
+    def opponent_matchup_data(self):
+        
+        return [perf for perf in self.reference_data if perf['matchup_id'] == self.matchup_id and perf['roster_id'] != self.roster_id][0]
+
+    @cached_property
+    def opponent_roster_id(self):
+        return self.opponent_matchup_data['roster_id']
+
+    @cached_property
+    def opponent_points(self):
+        return self.opponent_matchup_data['points']
+
+    @cached_property
+    def natural_wins(self):
+        if self.points > self.opponent_points:
+            natural_wins = 1
+        elif self.points < self.opponent_points:
+            natural_wins = 0
+        elif self.points == self.opponent_points:
+            natural_wins = .5
+
+        return natural_wins
 
 class Matchup():
     def __init__(self, matchup_data):
