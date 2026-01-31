@@ -29,7 +29,8 @@ jobs:
     
     - name: Copy library to layer directory
       run: |
-        cp -r sleeperapi python/lib/python3.13/site-packages/
+        mkdir -p python/lib/python3.13/site-packages/sleeperapi
+        cp -r *.py python/lib/python3.13/site-packages/sleeperapi/
     
     - name: Create layer zip
       run: |
