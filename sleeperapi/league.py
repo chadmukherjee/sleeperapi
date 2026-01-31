@@ -187,7 +187,6 @@ class Performance(object):
 
     @cached_property
     def opponent_matchup_data(self):
-        
         return [perf for perf in self.reference_data if perf['matchup_id'] == self.matchup_id and perf['roster_id'] != self.roster_id][0]
 
     @cached_property
