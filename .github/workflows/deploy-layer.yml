@@ -1,3 +1,4 @@
+---
 name: Deploy Lambda Layer
 on:
   workflow_dispatch:  # Manual trigger
@@ -8,68 +9,68 @@ jobs:
   deploy-layer:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.13'
-    
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ secrets.AWS_REGION }}
-    
-    - name: Create layer directory structure
-      run: |
-        mkdir -p python/lib/python3.13/site-packages
-    
-    - name: Install polars
-      run: |
-        pip install polars -t python/lib/python3.13/site-packages/
-    
-    - name: Copy sleeperapi library to layer directory
-      run: |
-        mkdir -p python/lib/python3.13/site-packages/sleeperapi
-        rsync -av --exclude='.*' --exclude='__pycache__' --exclude='*.pyc' --exclude='python' ./ python/lib/python3.13/site-packages/sleeperapi/
-    
-    - name: Create layer zip
-      run: |
-        zip -r sleeperapi-layer.zip python/
-    
-    - name: Publish new layer version
-      id: publish_layer
-      run: |
-        LAYER_VERSION=$(aws lambda publish-layer-version \
-          --layer-name sleeperapi \
-          --description "SleeperAPI library + Polars" \
-          --zip-file fileb://sleeperapi-layer.zip \
-          --compatible-runtimes python3.13 \
-          --query 'Version' \
-          --output text)
-        echo "layer_version=$LAYER_VERSION" >> $GITHUB_OUTPUT
-        echo "Published layer version: $LAYER_VERSION"
-    
-    - name: Update Lambda function layers
-      run: |
-        # Build layer ARNs
-        NEW_LAYER_ARN="arn:aws:lambda:us-east-1:424725251461:layer:sleeperapi:${{ steps.publish_layer.outputs.layer_version }}"
-        
-        # Update Lambda with new layer
-        aws lambda update-function-configuration \
-          --function-name SleeperPowerRankings \
-          --layers "$NEW_LAYER_ARN"
-        
-        echo "✅ Updated Lambda with layers:"
-        echo "  - SleeperAPI + Polars: $NEW_LAYER_ARN"
-    
-    - name: Wait for function update to complete
-      run: |
-        aws lambda wait function-updated \
-          --function-name SleeperPowerRankings
-    
-    - name: Deployment complete
-      run: echo "✅ Layer deployment successful!"
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Create layer directory structure
+        run: |
+          mkdir -p python/lib/python3.13/site-packages
+
+      - name: Install dependencies (polars + requests)
+        run: |
+          pip install polars requests -t python/lib/python3.13/site-packages/
+
+      - name: Copy sleeperapi library to layer directory
+        run: |
+          mkdir -p python/lib/python3.13/site-packages/sleeperapi
+          rsync -av --exclude='.*' --exclude='__pycache__' --exclude='*.pyc' --exclude='python' ./ python/lib/python3.13/site-packages/sleeperapi/
+
+      - name: Create layer zip
+        run: |
+          zip -r sleeperapi-layer.zip python/
+
+      - name: Publish new layer version
+        id: publish_layer
+        run: |
+          LAYER_VERSION=$(aws lambda publish-layer-version \
+            --layer-name sleeperapi \
+            --description "SleeperAPI library + Polars" \
+            --zip-file fileb://sleeperapi-layer.zip \
+            --compatible-runtimes python3.13 \
+            --query 'Version' \
+            --output text)
+          echo "layer_version=$LAYER_VERSION" >> $GITHUB_OUTPUT
+          echo "Published layer version: $LAYER_VERSION"
+
+      - name: Update Lambda function layers
+        run: |
+          # Build layer ARNs
+          NEW_LAYER_ARN="arn:aws:lambda:us-east-1:424725251461:layer:sleeperapi:${{ steps.publish_layer.outputs.layer_version }}"
+
+          # Update Lambda with new layer
+          aws lambda update-function-configuration \
+            --function-name SleeperPowerRankings \
+            --layers "$NEW_LAYER_ARN"
+
+          echo "✅ Updated Lambda with layers:"
+          echo "  - SleeperAPI + Polars: $NEW_LAYER_ARN"
+
+      - name: Wait for function update to complete
+        run: |
+          aws lambda wait function-updated \
+            --function-name SleeperPowerRankings
+
+      - name: Deployment complete
+        run: echo "✅ Layer deployment successful!"
