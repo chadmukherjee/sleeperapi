@@ -1,6 +1,9 @@
 name: Deploy Lambda Layer
 on:
   workflow_dispatch:  # Manual trigger
+  push:
+    branches:
+      - main
 jobs:
   deploy-layer:
     runs-on: ubuntu-latest
