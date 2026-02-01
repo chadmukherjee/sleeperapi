@@ -1,15 +1,9 @@
 name: Deploy Lambda Layer
-
 on:
   workflow_dispatch:  # Manual trigger
-  push:
-    branches:
-      - main
-
 jobs:
   deploy-layer:
     runs-on: ubuntu-latest
-    
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
@@ -33,11 +27,11 @@ jobs:
     - name: Install polars
       run: |
         pip install polars -t python/lib/python3.13/site-packages/
-
-	- name: Copy sleeperapi library to layer directory
-	  run: |
-		mkdir -p python/lib/python3.13/site-packages/sleeperapi
-		rsync -av --exclude='.*' --exclude='__pycache__' --exclude='*.pyc' --exclude='python' ./ python/lib/python3.13/site-packages/sleeperapi/
+    
+    - name: Copy sleeperapi library to layer directory
+      run: |
+        mkdir -p python/lib/python3.13/site-packages/sleeperapi
+        rsync -av --exclude='.*' --exclude='__pycache__' --exclude='*.pyc' --exclude='python' ./ python/lib/python3.13/site-packages/sleeperapi/
     
     - name: Create layer zip
       run: |
@@ -64,7 +58,7 @@ jobs:
         # Update Lambda with new layer
         aws lambda update-function-configuration \
           --function-name SleeperPowerRankings \
-          --layers "$NEW_LAYER_ARN" 
+          --layers "$NEW_LAYER_ARN"
         
         echo "✅ Updated Lambda with layers:"
         echo "  - SleeperAPI + Polars: $NEW_LAYER_ARN"
