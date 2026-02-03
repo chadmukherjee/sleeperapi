@@ -3,16 +3,10 @@ import json
 import polars as pl
 from functools import cached_property
 
-class League(object):
-    def __init__(self, league_id, base_url="https://api.sleeper.app/v1"):
-        """
-        Initialize the League object.
+class SleeperConn(object):
+    def __init__(self, base_url="https://api.sleeper.app/v1"):
 
-        :param league_id: str, The unique identifier for the league
-        :param base_url: str, Base URL for the Sleeper API
-        """
-        self.league_id = league_id
-        self.base_url = base_url
+        self.base_url=base_url
 
     def _get(self, endpoint):
         """
@@ -30,13 +24,28 @@ class League(object):
             print(f"Error fetching data from {url}: {e}")
             return None
 
+
+class League(object):
+    def __init__(self, league_id):
+        """
+        Initialize the League object.
+
+        :param league_id: str, The unique identifier for the league
+        :param base_url: str, Base URL for the Sleeper API
+        """
+        self.league_id = league_id
+        self.api       = SleeperConn()
+
+    def __repr__(self):
+        return f"League({self.league_name}, {self.league_year}, league_id={self.league_id})"
+
     @cached_property
     def league_data(self):
         """
         Fetches the league data from the Sleeper API and stores it in the object.
         """
         endpoint = f"/league/{self.league_id}"
-        self.league_data = self._get(endpoint)
+        self.league_data = self.api._get(endpoint)
         return self.league_data
 
     @cached_property
@@ -49,6 +58,10 @@ class League(object):
         return self.league_data.get("name")
 
     @cached_property
+    def league_year(self):
+        return str(self.league_data['season'])
+
+    @cached_property
     def league_settings(self):
         """
         Get the league's settings (e.g., scoring system, roster size).
@@ -56,6 +69,10 @@ class League(object):
         :return: dict, League settings or None if data is not fetched
         """
         return self.league_data.get("settings")
+
+    @cached_property
+    def has_results(self):
+        return bool(self.league_settings.get('last_scored_leg'))
 
     @cached_property
     def members(self):
@@ -66,7 +83,7 @@ class League(object):
         """
         endpoint = f"/league/{self.league_id}/users"
 
-        return self._get(endpoint)
+        return self.api._get(endpoint)
 
     @cached_property
     def rosters(self):
@@ -77,11 +94,27 @@ class League(object):
         """
         endpoint = f"/league/{self.league_id}/rosters"
 
-        return self._get(endpoint)
+        return self.api._get(endpoint)
 
     @cached_property
     def league_average_match(self):
         return bool(self.league_data['settings'].get('league_average_match'))
+
+    @cached_property
+    def previous_league(self):
+        if self.league_data['previous_league_id'] is not None:
+            return League(self.league_data['previous_league_id'])
+        else:
+            return None
+
+    @cached_property
+    def historical_leagues(self):
+        historical_leagues = [self]
+        if self.previous_league is not None:
+            historical_leagues += self.previous_league.historical_leagues
+
+        return historical_leagues
+
 
     @cached_property
     def roster_map(self):
@@ -142,7 +175,7 @@ class League(object):
 
         endpoint = f"/league/{self.league_id}/matchups/{week}"
 
-        matchups_data = self._get(endpoint)
+        matchups_data = self.api._get(endpoint)
 
         return WeekResults(week, performances= [Performance(perf, matchups_data) for perf in matchups_data])
 
@@ -175,7 +208,7 @@ class WeekResults(object):
         df = df.with_columns(
             (pl.col('natural_wins') - pl.col('expected_wins')).alias('luck_index')
         )
-        
+
         return df
 
 
@@ -194,7 +227,7 @@ class Performance(object):
     def __repr__(self):
         return (
             f"Performance(matchup_id={self.matchup_id}, roster_id={self.roster_id}, points={self.points}, "
-            f"starters={self.starters}, starters_points={self.starters_points}," 
+            f"starters={self.starters}, starters_points={self.starters_points},"
             f"opponent_roster_id={self.opponent_roster_id}, natural_wins={self.natural_wins})"
         )
 
@@ -234,4 +267,3 @@ class Roster(object):
         self.taxi = roster_data.get("taxi")
         self.reserve = roster_data.get("reserve")
         self.settings = roster_data.get("settings")
-
