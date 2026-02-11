@@ -1,12 +1,15 @@
 import requests
 import json
 import polars as pl
+import time
+from concurrent.futures import ThreadPoolExecutor
 from functools import cached_property
 
 class SleeperConn(object):
-    def __init__(self, base_url="https://api.sleeper.app/v1"):
+    def __init__(self, base_url="https://api.sleeper.app/v1", debug=False):
 
-        self.base_url=base_url
+        self.base_url = base_url
+        self.debug    = debug
 
     def _get(self, endpoint):
         """
@@ -15,18 +18,25 @@ class SleeperConn(object):
         :param endpoint: str, API endpoint (relative to the base URL)
         :return: dict, JSON response from the API
         """
+        start_timestamp = time.perf_counter()
         url = f"{self.base_url}{endpoint}"
         try:
             response = requests.get(url)
             response.raise_for_status()
-            return response.json()
+            returnval = response.json()
         except requests.RequestException as e:
             print(f"Error fetching data from {url}: {e}")
-            return None
+            returnval = None
+
+        elapsed = time.perf_counter() - start_timestamp
+        if self.debug:
+            print(f"API call to {endpoint} took: {elapsed:.4f}s")
+
+        return returnval
 
 
 class League(object):
-    def __init__(self, league_id):
+    def __init__(self, league_id, debug=False):
         """
         Initialize the League object.
 
@@ -34,7 +44,8 @@ class League(object):
         :param base_url: str, Base URL for the Sleeper API
         """
         self.league_id = league_id
-        self.api       = SleeperConn()
+        self.api       = SleeperConn(debug=debug)
+        self.debug     = debug
 
     def __repr__(self):
         return f"League({self.league_name}, {self.league_year}, league_id={self.league_id})"
@@ -84,6 +95,11 @@ class League(object):
         endpoint = f"/league/{self.league_id}/users"
 
         return self.api._get(endpoint)
+
+    @cached_property
+    def num_teams(self):
+
+        return len(self.members)
 
     @cached_property
     def rosters(self):
@@ -140,15 +156,67 @@ class League(object):
     @cached_property
     def historical_results(self):
 
-        return pl.concat([self.get_week_results(week).df for week in range(1, self.latest_reg_season_week)])
+        # Use ThreadPoolExecutor for I/O-bound API calls
+        with ThreadPoolExecutor(max_workers=self.latest_reg_season_week) as executor:
+            # Submit all weeks in parallel
+            futures = [executor.submit(self.get_week_results, week) for week in range(1, self.latest_reg_season_week)]
+
+            # Collect results as they complete
+            week_dfs = [future.result().df for future in futures]
+
+        # Concatenate all results
+        historical_results = pl.concat(week_dfs)
+        return historical_results
+
+    @cached_property
+    def dominance_df(self):
+
+        # Pivot to get ranks in matrix form: rows = weeks, columns = teams
+        rank_matrix = self.historical_results.pivot(
+            index='week',
+            columns='roster_id',
+            values='expected_wins'
+        )
+
+        roster_ids = list(map(str, self.historical_results['roster_id'].unique().to_list()))
+
+        # Convert to matrix form
+        ranks = rank_matrix.select(roster_ids).to_numpy()  # shape: (num_weeks, num_teams)
+
+        # Calculate weekly wins against each other opponent (for every team)
+        wins = (ranks[:, :, None] > ranks[:, None, :]).astype(float)  # shape: (weeks, teams, teams)
+
+        # Calculate a win %age for each cross-team matchup across the weeks
+        dominance = wins.mean(axis=0)  # shape: (teams, teams)
+
+        # Convert back to polars dataframe
+        dominance_df = pl.DataFrame(
+            dominance,
+            schema={str(roster_id): pl.Float64 for roster_id in roster_ids}
+        ).with_columns(
+            pl.Series('roster_id', roster_ids).cast(pl.Int32)
+        ).select(['roster_id'] + [str(rid) for rid in roster_ids])
+
+        indexable_dominance_df = dominance_df.with_columns(pl.concat_arr(*[pl.col(str(i)) for i in range(1,self.num_teams + 1)]).alias('dominance_array')).select('roster_id', 'dominance_array')
+
+        return indexable_dominance_df
 
     @cached_property
     def power_rankings(self):
 
+        historical_results = self.historical_results.join(self.dominance_df,
+                                                          on='roster_id',
+                                                          how='left')
+
+        print(historical_results)
+
+        historical_results = historical_results.with_columns((pl.col('natural_wins') - pl.col('dominance_array').arr.get(pl.col('opponent_roster_id') - 1)).alias('upset_aware_luckstat'))
+
         # Aggregate weekly metrics including cumulative sums
-        agg_df = self.historical_results.group_by('roster_id').agg([
+        agg_df = historical_results.group_by('roster_id').agg([
             pl.col('natural_wins').sum().alias('natural_wins'),
             pl.col('expected_wins').sum().alias('expected_wins'),
+            pl.col('upset_aware_luckstat').sum().alias('upset_aware_luckstat'),
             pl.col('luck_index').sum().alias('luckstat'),
             pl.col('luck_index').cum_sum().alias('cumulative_luck')
         ])
@@ -190,10 +258,11 @@ class WeekResults(object):
 
         num_teams = len(self.performances)
 
-        raw_df = pl.DataFrame([(self.week, perf.roster_id, perf.points, perf.natural_wins) for perf in self.performances],
+        raw_df = pl.DataFrame([(self.week, perf.roster_id, perf.opponent_roster_id, perf.points, perf.natural_wins) for perf in self.performances],
                               schema = {
                                   'week': pl.Int32,
                                   'roster_id': pl.Int32,
+                                  'opponent_roster_id': pl.Int32,
                                   'points': pl.Float64,
                                   'natural_wins': pl.Float64
                               },
