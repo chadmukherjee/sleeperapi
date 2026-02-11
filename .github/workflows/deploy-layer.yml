@@ -28,6 +28,28 @@ jobs:
         run: |
           mkdir -p python/lib/python3.13/site-packages
 
+      - name: Create numpy layer directory
+        run: |
+          mkdir -p python-numpy/lib/python3.13/site-packages
+          pip install numpy -t python-numpy/lib/python3.13/site-packages/
+
+      - name: Create numpy layer zip
+        run: |
+          cd python-numpy && zip -r ../numpy-layer.zip python/
+
+      - name: Publish numpy layer
+        id: publish_numpy
+        run: |
+          LAYER_VERSION=$(aws lambda publish-layer-version \
+            --layer-name numpy \
+            --description "NumPy for Python 3.13" \
+            --zip-file fileb://numpy-layer.zip \
+            --compatible-runtimes python3.13 \
+            --query 'Version' \
+            --output text)
+          echo "numpy_version=$LAYER_VERSION" >> $GITHUB_OUTPUT
+          echo "Published numpy layer version: $LAYER_VERSION"
+
       - name: Install dependencies (polars + requests + numpy)
         run: |
           pip install polars requests  -t python/lib/python3.13/site-packages/
@@ -51,23 +73,23 @@ jobs:
             --compatible-runtimes python3.13 \
             --query 'Version' \
             --output text)
-          echo "layer_version=$LAYER_VERSION" >> $GITHUB_OUTPUT
+          echo "sleeper_version=$LAYER_VERSION" >> $GITHUB_OUTPUT
           echo "Published layer version: $LAYER_VERSION"
 
-      - name: Update Lambda function layers
+      - name: Update Lambda function with all layers
         run: |
           # Build layer ARNs
-          SLEEPERAPI_LAYER="arn:aws:lambda:us-east-1:424725251461:layer:sleeperapi:${{ steps.publish_layer.outputs.layer_version }}"
-          NUMPY_LAYER="arn:aws:lambda:us-east-1:770693421928:layer:Klayers-p313-numpy:4"
+          NUMPY_LAYER="arn:aws:lambda:us-east-1:424725251461:layer:numpy:${{ steps.publish_numpy.outputs.numpy_version }}"
+          SLEEPERAPI_LAYER="arn:aws:lambda:us-east-1:424725251461:layer:sleeperapi:${{ steps.publish_sleeper.outputs.sleeper_version }}"
 
           # Update Lambda with both layers
           aws lambda update-function-configuration \
             --function-name SleeperPowerRankings \
-            --layers "$SLEEPERAPI_LAYER" "$NUMPY_LAYER"
+            --layers "$NUMPY_LAYER" "$SLEEPERAPI_LAYER"
 
           echo "✅ Updated Lambda with layers:"
+          echo "  - NumPy: $NUMPY_LAYER"
           echo "  - SleeperAPI + Polars + Requests: $SLEEPERAPI_LAYER"
-          echo "  - NumPy (public): $NUMPY_LAYER"
 
       - name: Wait for function update to complete
         run: |
