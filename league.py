@@ -131,7 +131,6 @@ class League(object):
 
         return historical_leagues
 
-
     @cached_property
     def roster_map(self):
         roster_map = []
@@ -207,8 +206,6 @@ class League(object):
         historical_results = self.historical_results.join(self.dominance_df,
                                                           on='roster_id',
                                                           how='left')
-
-        print(historical_results)
 
         historical_results = historical_results.with_columns((pl.col('natural_wins') - pl.col('dominance_array').arr.get(pl.col('opponent_roster_id') - 1)).alias('upset_aware_luckstat'))
 
