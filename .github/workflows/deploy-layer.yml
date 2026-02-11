@@ -30,12 +30,12 @@ jobs:
 
       - name: Create numpy layer directory
         run: |
-          mkdir -p python-numpy/lib/python3.13/site-packages
-          pip install numpy -t python-numpy/lib/python3.13/site-packages/
+          mkdir -p python/lib/python3.13/site-packages
+          pip install numpy -t python/lib/python3.13/site-packages/
 
       - name: Create numpy layer zip
         run: |
-          cd python-numpy && zip -r ../numpy-layer.zip python-numpy/
+          cd python && zip -r ../numpy-layer.zip python/
 
       - name: Publish numpy layer
         id: publish_numpy
@@ -49,6 +49,11 @@ jobs:
             --output text)
           echo "numpy_version=$LAYER_VERSION" >> $GITHUB_OUTPUT
           echo "Published numpy layer version: $LAYER_VERSION"
+
+      - name: Clean up for next layer
+        run: |
+          rm -rf python/
+          rm numpy-layer.zip
 
       - name: Install dependencies (polars + requests + numpy)
         run: |
