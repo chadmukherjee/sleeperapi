@@ -57,15 +57,17 @@ jobs:
       - name: Update Lambda function layers
         run: |
           # Build layer ARNs
-          NEW_LAYER_ARN="arn:aws:lambda:us-east-1:424725251461:layer:sleeperapi:${{ steps.publish_layer.outputs.layer_version }}"
+          SLEEPERAPI_LAYER="arn:aws:lambda:us-east-1:424725251461:layer:sleeperapi:${{ steps.publish_layer.outputs.layer_version }}"
+          NUMPY_LAYER="arn:aws:lambda:us-east-1:770693421928:layer:Klayers-p313-numpy:4"
 
-          # Update Lambda with new layer
+          # Update Lambda with both layers
           aws lambda update-function-configuration \
             --function-name SleeperPowerRankings \
-            --layers "$NEW_LAYER_ARN"
+            --layers "$SLEEPERAPI_LAYER" "$NUMPY_LAYER"
 
           echo "✅ Updated Lambda with layers:"
-          echo "  - SleeperAPI + Polars + numpy: $NEW_LAYER_ARN"
+          echo "  - SleeperAPI + Polars + Requests: $SLEEPERAPI_LAYER"
+          echo "  - NumPy (public): $NUMPY_LAYER"
 
       - name: Wait for function update to complete
         run: |
