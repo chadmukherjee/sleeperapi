@@ -24,10 +24,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Create layer directory structure
-        run: |
-          mkdir -p python/lib/python3.13/site-packages
-
       - name: Create numpy layer directory
         run: |
           mkdir -p python/lib/python3.13/site-packages
@@ -69,7 +65,7 @@ jobs:
           zip -r sleeperapi-layer.zip python/
 
       - name: Publish new layer version
-        id: publish_layer
+        id: publish_sleeper
         run: |
           LAYER_VERSION=$(aws lambda publish-layer-version \
             --layer-name sleeperapi \
