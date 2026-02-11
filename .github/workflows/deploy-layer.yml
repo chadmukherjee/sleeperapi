@@ -28,9 +28,9 @@ jobs:
         run: |
           mkdir -p python/lib/python3.13/site-packages
 
-      - name: Install dependencies (polars + requests)
+      - name: Install dependencies (polars + requests + numpy)
         run: |
-          pip install polars requests -t python/lib/python3.13/site-packages/
+          pip install polars requests numpy -t python/lib/python3.13/site-packages/
 
       - name: Copy sleeperapi library to layer directory
         run: |
@@ -46,7 +46,7 @@ jobs:
         run: |
           LAYER_VERSION=$(aws lambda publish-layer-version \
             --layer-name sleeperapi \
-            --description "SleeperAPI library + Polars" \
+            --description "SleeperAPI library + Polars + numpy" \
             --zip-file fileb://sleeperapi-layer.zip \
             --compatible-runtimes python3.13 \
             --query 'Version' \
