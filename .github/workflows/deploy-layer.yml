@@ -35,7 +35,7 @@ jobs:
 
       - name: Create numpy layer zip
         run: |
-          cd python-numpy && zip -r ../numpy-layer.zip python/
+          cd python-numpy && zip -r ../numpy-layer.zip python-numpy/
 
       - name: Publish numpy layer
         id: publish_numpy
