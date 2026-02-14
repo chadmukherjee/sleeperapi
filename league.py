@@ -1,4 +1,3 @@
-import json
 import polars as pl
 from sleeperapi.api import SleeperConn
 from concurrent.futures import ThreadPoolExecutor
@@ -25,8 +24,8 @@ class League(object):
         Fetches the league data from the Sleeper API and stores it in the object.
         """
         endpoint = f"/league/{self.league_id}"
-        self.league_data = self.api._get(endpoint)
-        return self.league_data
+        league_data = self.api._get(endpoint)
+        return league_data
 
     @cached_property
     def league_name(self):
