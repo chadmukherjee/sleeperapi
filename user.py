@@ -45,7 +45,8 @@ class User(object):
             league_id = league['league_id']
             if league_id not in represented_leagues:
                 newleague = League(league_id, debug=self.debug)
-                leagues.append(newleague)
-                represented_leagues.extend([histleague.league_id for histleague in newleague.historical_leagues])
+                hist_leagues = newleague.historical_leagues
+                leagues.append({'league':newleague, 'seasons':len(hist_leagues)})
+                represented_leagues.extend([histleague.league_id for histleague in hist_leagues])
 
         return leagues
