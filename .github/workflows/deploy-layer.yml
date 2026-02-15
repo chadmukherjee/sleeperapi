@@ -77,7 +77,22 @@ jobs:
           echo "sleeper_version=$LAYER_VERSION" >> $GITHUB_OUTPUT
           echo "Published layer version: $LAYER_VERSION"
 
-      - name: Update Lambda function with all layers
+      - name: Update SleeperPowerRankings Lambda function with all layers
+        run: |
+          # Build layer ARNs
+          NUMPY_LAYER="arn:aws:lambda:us-east-1:424725251461:layer:numpy:${{ steps.publish_numpy.outputs.numpy_version }}"
+          SLEEPERAPI_LAYER="arn:aws:lambda:us-east-1:424725251461:layer:sleeperapi:${{ steps.publish_sleeper.outputs.sleeper_version }}"
+
+          # Update SleeperPowerRankings Lambda with both layers
+          aws lambda update-function-configuration \
+            --function-name SleeperPowerRankings \
+            --layers "$NUMPY_LAYER" "$SLEEPERAPI_LAYER"
+
+          echo "✅ Updated SleeperPowerRankings Lambda with layers:"
+          echo "  - NumPy: $NUMPY_LAYER"
+          echo "  - SleeperAPI + Polars + Requests: $SLEEPERAPI_LAYER"
+
+      - name: Update SleeperUser Lambda function with all layers
         run: |
           # Build layer ARNs
           NUMPY_LAYER="arn:aws:lambda:us-east-1:424725251461:layer:numpy:${{ steps.publish_numpy.outputs.numpy_version }}"
@@ -85,7 +100,7 @@ jobs:
 
           # Update Lambda with both layers
           aws lambda update-function-configuration \
-            --function-name SleeperPowerRankings \
+            --function-name SleeperUser \
             --layers "$NUMPY_LAYER" "$SLEEPERAPI_LAYER"
 
           echo "✅ Updated Lambda with layers:"
@@ -96,6 +111,11 @@ jobs:
         run: |
           aws lambda wait function-updated \
             --function-name SleeperPowerRankings
+
+      - name: Wait for function update to complete
+        run: |
+          aws lambda wait function-updated \
+            --function-name SleeperUser
 
       - name: Deployment complete
         run: echo "✅ Layer deployment successful!"
