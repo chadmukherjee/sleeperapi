@@ -81,6 +81,110 @@ class League(object):
         return self.api._get(endpoint)
 
     @cached_property
+    def rosters_df(self) -> pl.DataFrame:
+        """
+        Dataframe of  rosters in the league.
+
+        :return: pl.DataFrame, where each row is a player from a roster in the league
+        """
+
+        rosters_df = pl.DataFrame(
+                        [
+                            {
+                                "roster_id": r["roster_id"],
+                                "owner_id": r["owner_id"],
+                                "players": r["players"] or [],
+                            }
+                            for r in self.rosters
+                        ],
+                        schema={
+                            "roster_id": pl.Int64,
+                            "owner_id": pl.String,
+                            "players": pl.List(pl.String),
+                        },
+                    ) \
+                    .explode("players") \
+                    .rename({"players": "player_id"}) \
+                    .drop_nulls("player_id")
+
+        return rosters_df
+
+    @cached_property
+    def draft_id(self):
+        """
+        Get league's draft ID
+
+        :return: int, the sleeper draft ID for the league's draft
+        """
+
+        return self.league_data.get('draft_id')
+
+    @cached_property
+    def draft(self):
+        """
+        Get league's draft
+
+        :return: list, a list of draft picks
+        """
+
+        endpoint = f"/draft/{self.draft_id}/picks"
+
+        return self.api._get(endpoint)
+
+    @cached_property
+    def draft_df(self) -> pl.DataFrame:
+        """One row per draft pick."""
+        return pl.DataFrame(
+            [
+                {
+                    "roster_id": p["roster_id"],
+                    "player_id": p["player_id"],
+                    "round": p["round"],
+                    "pick_no": p["pick_no"],
+                    "is_keeper": bool(p.get("is_keeper")),
+                    "first_name": p["metadata"].get("first_name"),
+                    "last_name": p["metadata"].get("last_name"),
+                    "position": p["metadata"].get("position"),
+                }
+                for p in self.draft
+            ],
+            schema={
+                "roster_id": pl.Int64,
+                "player_id": pl.String,
+                "round": pl.Int64,
+                "pick_no": pl.Int64,
+                "is_keeper": pl.Boolean,
+                "first_name": pl.String,
+                "last_name": pl.String,
+                "position": pl.String,
+            },
+        )
+
+
+
+    @cached_property
+    def drafted_roster_coverage_df(self) -> pl.DataFrame:
+        """Share of each team's current roster that the team itself drafted."""
+        drafted = self.draft_df.select("roster_id", "player_id").with_columns(
+            pl.lit(True).alias("drafted_by_team")
+        )
+
+        return (
+            self.rosters_df
+            .join(drafted, on=["roster_id", "player_id"], how="left")
+            .with_columns(pl.col("drafted_by_team").fill_null(False))
+            .group_by("roster_id")
+            .agg(
+                pl.len().alias("roster_size"),
+                pl.col("drafted_by_team").sum().alias("drafted_players"),
+                pl.col("drafted_by_team").mean().alias("drafted_pct"),
+            )
+            .join(self.roster_map.select("roster_id", "team_name"), on="roster_id", how="left")
+            .select("roster_id", "team_name", "roster_size", "drafted_players", "drafted_pct")
+            .sort("drafted_pct", descending=True))
+
+
+    @cached_property
     def league_average_match(self):
         return bool(self.league_data['settings'].get('league_average_match'))
 
@@ -188,12 +292,13 @@ class League(object):
 
         final_agg_df = agg_df.join(self.roster_map,
                                    on='roster_id',
-                                   how='inner').drop('roster_id')
+                                   how='inner') \
+                              .join(self.drafted_roster_coverage_df.select('roster_id', 'drafted_pct'),
+                                    on='roster_id',
+                                    how='inner') \
+                              .drop('roster_id')
 
         return final_agg_df.sort('expected_wins', descending=True)
-
-
-        return complete_power_rankings.drop(columns=['roster_id']).sort_values(by="expected_wins", ascending=False)
 
     @cached_property
     def latest_reg_season_week(self):
